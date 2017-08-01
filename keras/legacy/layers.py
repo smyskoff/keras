@@ -1,10 +1,9 @@
-import inspect
 import types as python_types
 import warnings
 
 from ..engine.topology import Layer, InputSpec
 from .. import backend as K
-from ..utils.generic_utils import func_dump, func_load
+from ..utils.generic_utils import func_dump, func_load, has_arg
 from .. import regularizers
 from .. import constraints
 from .. import activations
@@ -46,7 +45,7 @@ class Merge(Layer):
             (1:1 mapping to input tensors)
             and return a single shape tuple, including the
             batch size (same convention as the
-            `get_output_shape_for` method of layers).
+            `compute_output_shape` method of layers).
         node_indices: Optional list of integers containing
             the output node index for each input layer
             (in case some input layers have multiple output nodes).
@@ -76,6 +75,10 @@ class Merge(Layer):
         self._output_mask = output_mask
         self.arguments = arguments if arguments else {}
         self._initial_weights = None
+        self._updates = []
+        self._losses = []
+        self._per_input_updates = {}
+        self._per_input_losses = {}
 
         # Layer parameters.
         self.inbound_nodes = []
@@ -193,8 +196,7 @@ class Merge(Layer):
         # Case: "mode" is a lambda or function.
         if callable(self.mode):
             arguments = self.arguments
-            arg_spec = inspect.getargspec(self.mode)
-            if 'mask' in arg_spec.args:
+            if has_arg(self.mode, 'mask'):
                 arguments['mask'] = mask
             return self.mode(inputs, **arguments)
 
@@ -286,7 +288,7 @@ class Merge(Layer):
 
         assert hasattr(mask, '__len__') and len(mask) == len(inputs)
 
-        if self.mode in ['sum', 'mul', 'ave']:
+        if self.mode in ['sum', 'mul', 'ave', 'max']:
             masks = [K.expand_dims(m, 0) for m in mask if m is not None]
             return K.all(K.concatenate(masks, axis=0), axis=0, keepdims=False)
         elif self.mode == 'concat':
@@ -297,8 +299,8 @@ class Merge(Layer):
             for input_i, mask_i in zip(inputs, mask):
                 if mask_i is None:
                     # Input is unmasked. Append all 1s to masks,
-                    # but cast it to uint8 first
-                    masks.append(K.cast(K.ones_like(input_i), 'uint8'))
+                    # but cast it to bool first
+                    masks.append(K.cast(K.ones_like(input_i), 'bool'))
                 elif K.ndim(mask_i) < K.ndim(input_i):
                     # Mask is smaller than the input, expand it
                     masks.append(K.expand_dims(mask_i))
@@ -361,6 +363,7 @@ class Merge(Layer):
 
     @classmethod
     def from_config(cls, config):
+        config = config.copy()
         mode_type = config.pop('mode_type')
         if mode_type == 'function':
             mode = globals()[config['mode']]
@@ -406,7 +409,7 @@ def merge(inputs, mode='sum', concat_axis=-1,
     ```
     # Arguments
         mode: String or lambda/function. If string, must be one
-            of: 'sum', 'mul', 'concat', 'ave', 'cos', 'dot'.
+            of: 'sum', 'mul', 'concat', 'ave', 'cos', 'dot', 'max'.
             If lambda/function, it should take as input a list of tensors
             and return a single tensor.
         concat_axis: Integer, axis to use in mode `concat`.
@@ -417,7 +420,7 @@ def merge(inputs, mode='sum', concat_axis=-1,
             If the latter case, it should take as input a list of shape tuples
             (1:1 mapping to input tensors) and return a single shape tuple,
             including the batch size
-            (same convention as the `get_output_shape_for` method of layers).
+            (same convention as the `compute_output_shape` method of layers).
         node_indices: Optional list of integers containing
             the output node index for each input layer
             (in case some input layers have multiple output nodes).
@@ -429,7 +432,7 @@ def merge(inputs, mode='sum', concat_axis=-1,
     warnings.warn('The `merge` function is deprecated '
                   'and will be removed after 08/2017. '
                   'Use instead layers from `keras.layers.merge`, '
-                  'e.g. `sum`, `concatenate`, etc.', stacklevel=2)
+                  'e.g. `add`, `concatenate`, etc.', stacklevel=2)
     all_keras_tensors = True
     for x in inputs:
         if not hasattr(x, '_keras_history'):

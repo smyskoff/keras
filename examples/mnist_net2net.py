@@ -26,7 +26,7 @@ Notes
 
 Experiments
 - Teacher model: a basic CNN model trained on MNIST for 3 epochs.
-- Net2WiderNet exepriment:
+- Net2WiderNet experiment:
   + Student model has a wider Conv2D layer and a wider FC layer.
   + Comparison of 'random-padding' vs 'net2wider' weight initialization.
   + With both methods, student model should immediately perform as well as
@@ -231,7 +231,8 @@ def make_teacher_model(train_data, validation_data, epochs=3):
                   metrics=['accuracy'])
 
     train_x, train_y = train_data
-    history = model.fit(train_x, train_y, epochs=epochs,
+    history = model.fit(train_x, train_y,
+                        epochs=epochs,
                         validation_data=validation_data)
     return model, history
 
@@ -280,7 +281,8 @@ def make_wider_student_model(teacher_model, train_data,
                   metrics=['accuracy'])
 
     train_x, train_y = train_data
-    history = model.fit(train_x, train_y, epochs=epochs,
+    history = model.fit(train_x, train_y,
+                        epochs=epochs,
                         validation_data=validation_data)
     return model, history
 
@@ -311,7 +313,7 @@ def make_deeper_student_model(teacher_model, train_data,
     # add another fc layer to make original fc1 deeper
     if init == 'net2deeper':
         # net2deeper for fc layer with relu, is just an identity initializer
-        model.add(Dense(64, init='identity',
+        model.add(Dense(64, kernel_initializer='identity',
                         activation='relu', name='fc1-deeper'))
     elif init == 'random-init':
         model.add(Dense(64, activation='relu', name='fc1-deeper'))
@@ -328,7 +330,8 @@ def make_deeper_student_model(teacher_model, train_data,
                   metrics=['accuracy'])
 
     train_x, train_y = train_data
-    history = model.fit(train_x, train_y, epochs=epochs,
+    history = model.fit(train_x, train_y,
+                        epochs=epochs,
                         validation_data=validation_data)
     return model, history
 
